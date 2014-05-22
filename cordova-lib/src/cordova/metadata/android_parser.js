@@ -77,9 +77,9 @@ module.exports.prototype = {
         // Update app name by editing res/values/strings.xml
         var name = config.name();
         var strings = xml.parseElementtreeSync(this.strings);
-        strings.find('string[@name="app_name"]').text = name;
-        fs.writeFileSync(this.strings, strings.write({indent: 4}), 'utf-8');
-        events.emit('verbose', 'Wrote out Android application name to "' + name + '"');
+        //strings.find('string[@name="app_name"]').text = name;
+        //fs.writeFileSync(this.strings, strings.write({indent: 4}), 'utf-8');
+        //events.emit('verbose', 'Wrote out Android application name to "' + name + '"');
 
         var icons = config.getIcons('android');
         // if there are icon elements in config.xml
