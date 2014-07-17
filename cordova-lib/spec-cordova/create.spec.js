@@ -23,9 +23,9 @@ var helpers = require('./helpers'),
     shell = require('shelljs'),
     Q = require('q'),
     config = require('../src/cordova/config'),
-    events = require('../src/cordova/events'),
+    events = require('../src/events'),
     util = require('../src/cordova/util'),
-    ConfigParser = require('../src/cordova/ConfigParser'),
+    ConfigParser = require('../src/configparser/ConfigParser'),
     cordova = require('../src/cordova/cordova');
 
 // A utility function to generate all combinations of elements from 2 arrays.
@@ -50,7 +50,7 @@ var cordovaDir = path.join(project, '.cordova');
 var configNormal = {
       lib: {
         www: {
-          uri: path.join(__dirname, 'fixtures', 'base', 'www'),
+          url: path.join(__dirname, 'fixtures', 'base', 'www'),
           version: "testCordovaCreate",
           id: appName
         }
@@ -59,7 +59,7 @@ var configNormal = {
 var configSymlink = {
       lib: {
         www: {
-          uri: path.join(__dirname, 'fixtures', 'base'), // "create" should copy or link the www child of this dir and not the dir itself.
+          url: path.join(__dirname, 'fixtures', 'base'), // "create" should copy or link the www child of this dir and not the dir itself.
           link: true
         }
       }

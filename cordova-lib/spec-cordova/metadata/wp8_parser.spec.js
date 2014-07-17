@@ -27,7 +27,7 @@ var platforms = require('../../src/cordova/platforms'),
     Q = require('q'),
     child_process = require('child_process'),
     config = require('../../src/cordova/config'),
-    ConfigParser = require('../../src/cordova/ConfigParser'),
+    ConfigParser = require('../../src/configparser/ConfigParser'),
     CordovaError = require('../../src/CordovaError'),
     cordova = require('../../src/cordova/cordova');
 
@@ -36,7 +36,7 @@ var cfg = new ConfigParser(path.join(__dirname, '..', 'test-config.xml'));
 
 describe('wp8 project parser', function() {
     var proj = '/some/path';
-    var exists, exec, custom, readdir, cfg_parser;
+    var exists, exec, custom, readdir, cfg_parser, config_read;
     var manifestXml, projXml;
     beforeEach(function() {
         exists = spyOn(fs, 'existsSync').andReturn(true);
@@ -44,6 +44,16 @@ describe('wp8 project parser', function() {
             (cb || opts)(0, '', '');
         });
         custom = spyOn(config, 'has_custom_path').andReturn(false);
+        config_read = spyOn(config, 'read').andCallFake(function() {
+            return custom() ? {
+                lib: {
+                    wp8: {
+                        url: custom()
+                    }
+                }
+            }
+            : ({})
+        });
         readdir = spyOn(fs, 'readdirSync').andReturn(['test.csproj']);
         projXml = manifestXml = null;
         spyOn(xmlHelpers, 'parseElementtreeSync').andCallFake(function(path) {
@@ -84,31 +94,6 @@ describe('wp8 project parser', function() {
                 expect(p.wp8_proj_dir).toEqual(proj);
                 expect(p.manifest_path).toEqual(path.join(proj, 'Properties', 'WMAppManifest.xml'));
             }).not.toThrow();
-        });
-    });
-
-    describe('check_requirements', function() {
-        it('should fire a callback if there is an error during shelling out', function(done) {
-            exec.andCallFake(function(cmd, opts, cb) {
-                (cb || opts)(50, 'there was an errorz!');
-            });
-            errorWrapper(platforms.wp8.parser.check_requirements(proj), done, function(err) {
-                expect(err).toContain('there was an errorz!');
-            });
-        });
-        it('should check by calling check_reqs on the stock lib path if no custom path is defined', function(done) {
-            wrapper(platforms.wp8.parser.check_requirements(proj), done, function() {
-                expect(exec.mostRecentCall.args[0]).toContain(util.libDirectory);
-                expect(exec.mostRecentCall.args[0]).toMatch(/check_reqs"$/);
-            });
-        });
-        it('should check by calling check_reqs on a custom path if it is so defined', function(done) {
-            var custom_path = path.join('some','custom','path','to','wp8','lib');
-            custom.andReturn(custom_path);
-            wrapper(platforms.wp8.parser.check_requirements(proj), done, function(err) {
-                expect(exec.mostRecentCall.args[0]).toContain(custom_path);
-                expect(exec.mostRecentCall.args[0]).toMatch(/check_reqs"$/);
-            });
         });
     });
 

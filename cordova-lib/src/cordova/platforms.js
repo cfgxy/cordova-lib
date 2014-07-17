@@ -17,6 +17,10 @@
     under the License.
 */
 
+/* jshint node:true, bitwise:true, undef:true, trailing:true, quotmark:true,
+          indent:4, unused:vars, latedef:nofunc
+*/
+
 module.exports = {
     'ios' : {
         hostos : ['darwin'],
@@ -35,30 +39,23 @@ module.exports = {
         url    : 'https://git-wip-us.apache.org/repos/asf?p=cordova-ubuntu.git',
         version: '3.5.0'
     },
-     'amazon-fireos' : {
+    'amazon-fireos' : {
         parser : './metadata/amazon_fireos_parser',
         url    : 'https://git-wip-us.apache.org/repos/asf?p=cordova-amazon-fireos.git',
         version: '3.5.0'
-    },
-    'wp7' : {
-        hostos : ['win32'],
-        parser : './metadata/wp7_parser',
-        url    : 'https://git-wip-us.apache.org/repos/asf?p=cordova-wp8.git',
-        version: '3.5.0',
-        subdirectory: 'wp7'
     },
     'wp8' : {
         hostos : ['win32'],
         parser : './metadata/wp8_parser',
         url    : 'https://git-wip-us.apache.org/repos/asf?p=cordova-wp8.git',
         version: '3.5.0',
+        altplatform: 'wp',
         subdirectory: 'wp8'
     },
     'blackberry10' : {
         parser : './metadata/blackberry10_parser',
         url    : 'https://git-wip-us.apache.org/repos/asf?p=cordova-blackberry.git',
-        version: '3.5.0',
-        subdirectory: 'blackberry10'
+        version: '3.5.0'
     },
     'www':{
         hostos : [],
@@ -72,10 +69,17 @@ module.exports = {
     },
     'windows8':{
         hostos : ['win32'],
-        parser: './metadata/windows8_parser',
+        parser: './metadata/windows_parser',
         url    : 'https://git-wip-us.apache.org/repos/asf?p=cordova-windows.git',
-        version: '3.5.0',
-        subdirectory: 'windows8'
+        version: 'master',
+        subdirectory: 'windows'
+    },
+    'windows':{
+        hostos : ['win32'],
+        parser: './metadata/windows_parser',
+        url    : 'https://git-wip-us.apache.org/repos/asf?p=cordova-windows.git',
+        version: 'master',
+        subdirectory: 'windows'
     }
 };
 

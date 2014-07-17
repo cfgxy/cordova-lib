@@ -1,15 +1,31 @@
-var csproj  = require('../../src/plugman/util/csproj'),
+/**
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements.  See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership.  The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied.  See the License for the
+    specific language governing permissions and limitations
+    under the License.
+*/
+var csproj  = require('../../src/util/windows/csproj'),
     path    = require('path'),
     os      = require('osenv'),
     et      = require('elementtree'),
     fs      = require('fs'),
     xml_helpers = require('../../src/util/xml-helpers');
 
-var wp7_project     = path.join(__dirname, '..', 'projects', 'wp7'),
-    wp8_project     = path.join(__dirname, '..', 'projects', 'wp8'),
+var wp8_project     = path.join(__dirname, '..', 'projects', 'wp8'),
     temp            = path.join(os.tmpdir(), 'plugman'),
-    example1_csproj  = path.join(wp7_project, 'CordovaAppProj.csproj'),
-    example2_csproj  = path.join(wp8_project, 'CordovaAppProj.csproj'),
+    example_csproj  = path.join(wp8_project, 'CordovaAppProj.csproj'),
     wpcsproj        = path.join(__dirname, '..', 'plugins', 'WPcsproj');
 
 describe('csproj', function() {
@@ -21,7 +37,7 @@ describe('csproj', function() {
     it('should successfully parse a valid csproj file into an xml document', function() {
         var doc;
         expect(function() {
-            doc = new csproj(example1_csproj);
+            doc = new csproj(example_csproj);
         }).not.toThrow();
         expect(doc.xml.getroot()).toBeDefined();
     });
@@ -40,7 +56,7 @@ describe('csproj', function() {
         var content_test   = path.join('src', 'Content.img');
 
         describe('add method', function() {
-            var test_csproj = new csproj(example1_csproj);
+            var test_csproj = new csproj(example_csproj);
             it('should properly add .xaml files', function() {
                 test_csproj.addSourceFile(page_test);
                 expect(test_csproj.xml.getroot().find('.//Page[@Include="src\\UI\\PageTest.xaml"]')).toBeTruthy();
@@ -63,7 +79,7 @@ describe('csproj', function() {
         });
 
         describe('remove method', function() {
-            var test_csproj = new csproj(example2_csproj);
+            var test_csproj = new csproj(example_csproj);
             it('should properly remove .xaml pages', function() {
                 test_csproj.removeSourceFile(page_test);
                 expect(test_csproj.xml.getroot().find('.//Page[@Include="src\\UI\\PageTest.xaml"]')).toBeFalsy();

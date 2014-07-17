@@ -1,10 +1,31 @@
-/* jshint node:true, asi:true, laxcomma:true, sub:true, expr:true, unused:vars */
+/**
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements.  See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership.  The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied.  See the License for the
+    specific language governing permissions and limitations
+    under the License.
+*/
+
+/* jshint node:true, bitwise:true, undef:true, trailing:true, quotmark:true,
+          indent:4, unused:vars, latedef:nofunc,
+          laxcomma:true, sub:true, expr:true
+*/
 
 var path = require('path'),
     fs   = require('fs'),
     action_stack = require('./util/action-stack'),
     dep_graph = require('dep-graph'),
-    elementtree = require('elementtree'),
     child_process = require('child_process'),
     semver = require('semver'),
     config_changes = require('./util/config-changes'),
@@ -15,7 +36,7 @@ var path = require('path'),
     os = require('os'),
     underscore = require('underscore'),
     shell   = require('shelljs'),
-    events = require('./events'),
+    events = require('../events'),
     plugman = require('./plugman'),
     isWindows = (os.platform().substr(0,3) === 'win');
 
@@ -48,7 +69,7 @@ module.exports = function installPlugin(platform, project_dir, id, plugins_dir, 
     plugins_dir = plugins_dir || path.join(project_dir, 'cordova', 'plugins');
 
     if (!platform_modules[platform]) {
-        return Q.reject(new CordovaError(platform + " not supported."));
+        return Q.reject(new CordovaError(platform + ' not supported.'));
     }
 
     var current_stack = new action_stack();
@@ -87,10 +108,10 @@ function checkEngines(engines) {
     for(var i = 0; i < engines.length; i++) {
         var engine = engines[i];
 
-        if(semver.satisfies(engine.currentVersion, engine.minVersion) || engine.currentVersion === null){
+        if ( semver.satisfies(engine.currentVersion, engine.minVersion) || engine.currentVersion === null ) {
             // engine ok!
-        }else{
-            var msg = "Plugin doesn't support this project's " + engine.name + ' version. ' +
+        } else {
+            var msg = 'Plugin doesn\'t support this project\'s ' + engine.name + ' version. ' +
                       engine.name + ': ' + engine.currentVersion +
                       ', failed version requirement: ' + engine.minVersion;
             return Q.reject(new CordovaError(msg));
@@ -111,7 +132,7 @@ function cleanVersionOutput(version, name){
     // put a warning about using the dev branch
     if (dev_index > -1) {
         // some platform still lists dev branches as just dev, set to null and continue
-        if(out=="dev"){
+        if(out=='dev'){
             out = null;
         }
         events.emit('verbose', name+' has been detected as using a development branch. Attemping to install anyways.');
@@ -156,6 +177,10 @@ function callEngineScripts(engines) {
                         engine.currentVersion = null;
                     } else {
                         engine.currentVersion = cleanVersionOutput(stdout, engine.name);
+                        if (engine.currentVersion === '') {
+                            events.emit('warn', engine.name +' version check returned nothing ('+ scriptPath +'), continuing anyways.');
+                            engine.currentVersion = null;
+                        }
                     }
 
                     d.resolve(engine);
@@ -165,7 +190,7 @@ function callEngineScripts(engines) {
             } else {
 
                 if(engine.currentVersion) {
-                    engine.currentVersion = cleanVersionOutput(engine.currentVersion, engine.name)
+                    engine.currentVersion = cleanVersionOutput(engine.currentVersion, engine.name);
                 } else {
                     events.emit('warn', engine.name +' version not detected (lacks script '+ scriptPath +' ), continuing.');
                 }
@@ -185,14 +210,14 @@ function getEngines(pluginElement, platform, project_dir, plugin_dir){
     // load in known defaults and update when necessary
 
     engines.forEach(function(engine){
-        theName = engine.attrib["name"];
+        theName = engine.attrib['name'];
 
         // check to see if the engine is listed as a default engine
         if(defaultEngines[theName]){
             // make sure engine is for platform we are installing on
             defaultPlatformIndex = defaultEngines[theName].platform.indexOf(platform);
             if(defaultPlatformIndex > -1 || defaultEngines[theName].platform === '*'){
-                defaultEngines[theName].minVersion = defaultEngines[theName].minVersion ? defaultEngines[theName].minVersion : engine.attrib["version"];
+                defaultEngines[theName].minVersion = defaultEngines[theName].minVersion ? defaultEngines[theName].minVersion : engine.attrib['version'];
                 defaultEngines[theName].currentVersion = defaultEngines[theName].currentVersion ? defaultEngines[theName].currentVersion : null;
                 defaultEngines[theName].scriptSrc = defaultEngines[theName].scriptSrc ? defaultEngines[theName].scriptSrc : null;
                 defaultEngines[theName].name = theName;
@@ -205,9 +230,9 @@ function getEngines(pluginElement, platform, project_dir, plugin_dir){
             }
         // check for other engines
         }else{
-            platformIndex = engine.attrib["platform"].indexOf(platform);
-            if(platformIndex > -1 || engine.attrib["platform"] === '*'){
-                uncheckedEngines.push({ 'name': theName, 'platform': engine.attrib["platform"], 'scriptSrc':path.resolve(plugin_dir, engine.attrib["scriptSrc"]), 'minVersion' :  engine.attrib["version"]});
+            platformIndex = engine.attrib['platform'].indexOf(platform);
+            if(platformIndex > -1 || engine.attrib['platform'] === '*'){
+                uncheckedEngines.push({ 'name': theName, 'platform': engine.attrib['platform'], 'scriptSrc':path.resolve(plugin_dir, engine.attrib['scriptSrc']), 'minVersion' :  engine.attrib['version']});
             }
         }
     });
@@ -236,9 +261,9 @@ function isPluginInstalled(plugins_dir, platform, plugin_id) {
 
 // possible options: cli_variables, www_dir, is_top_level
 // Returns a promise.
-var runInstall = module.exports.runInstall = function runInstall(actions, platform, project_dir, plugin_dir, plugins_dir, options) {
+module.exports.runInstall = runInstall;
+function runInstall(actions, platform, project_dir, plugin_dir, plugins_dir, options) {
     var pluginInfo   = new PluginInfo.PluginInfo(plugin_dir)
-      , plugin_et    = pluginInfo._et
       , filtered_variables = {};
 
     options = options || {};
@@ -254,7 +279,7 @@ var runInstall = module.exports.runInstall = function runInstall(actions, platfo
     }
     events.emit('log', 'Installing "' + pluginInfo.id + '" for ' + platform);
 
-    var theEngines = getEngines(plugin_et, platform, project_dir, plugin_dir);
+    var theEngines = getEngines(pluginInfo._et, platform, project_dir, plugin_dir);
 
     var install = {
         actions: actions,
@@ -263,34 +288,26 @@ var runInstall = module.exports.runInstall = function runInstall(actions, platfo
         plugins_dir: plugins_dir,
         top_plugin_id: pluginInfo.id,
         top_plugin_dir: plugin_dir
-    }
+    };
 
     return callEngineScripts(theEngines)
     .then(checkEngines)
     .then(
         function() {
             // checking preferences, if certain variables are not provided, we should throw.
-            var prefs = plugin_et.findall('./preference') || [];
-            prefs = prefs.concat(plugin_et.findall('./platform[@name="'+platform+'"]/preference'));
-            var missing_vars = [];
-            prefs.forEach(function (pref) {
-                var key = pref.attrib["name"].toUpperCase();
-                options.cli_variables = options.cli_variables || {};
-                if (options.cli_variables[key] === undefined)
-                    missing_vars.push(key)
-                else
-                    filtered_variables[key] = options.cli_variables[key]
-            });
+            var prefs = pluginInfo.getPreferences(platform);
+            options.cli_variables = options.cli_variables || {};
+            filtered_variables = underscore.pick(options.cli_variables, prefs);
+            var missing_vars = underscore.difference(prefs, Object.keys(options.cli_variables));
             install.filtered_variables = filtered_variables;
 
             if (missing_vars.length > 0) {
-                throw new Error('Variable(s) missing: ' + missing_vars.join(", "));
+                throw new Error('Variable(s) missing: ' + missing_vars.join(', '));
             }
 
             // Check for dependencies
-            var dependencies = plugin_et.findall('dependency') || [];
-            dependencies = dependencies.concat(plugin_et.findall('./platform[@name="'+platform+'"]/dependency'));
-            if(dependencies && dependencies.length) {
+            var dependencies = pluginInfo.getDependencies(platform);
+            if(dependencies.length) {
                 return installDependencies(install, dependencies, options);
             }
             return Q(true);
@@ -304,11 +321,11 @@ var runInstall = module.exports.runInstall = function runInstall(actions, platfo
                 copyPlugin(plugin_dir, plugins_dir, options.link);
             }
 
-            return handleInstall(actions, pluginInfo.id, plugin_et, platform, project_dir, plugins_dir, install_plugin_dir, filtered_variables, options.www_dir, options.is_top_level);
+            return handleInstall(actions, pluginInfo, platform, project_dir, plugins_dir, install_plugin_dir, filtered_variables, options);
         }
     ).fail(
         function (error) {
-            events.emit('warn', "Failed to install '" + pluginInfo.id + "':" + error.stack);
+            events.emit('warn', 'Failed to install \'' + pluginInfo.id + '\':' + error.stack);
             throw error;
         }
     );
@@ -317,7 +334,7 @@ var runInstall = module.exports.runInstall = function runInstall(actions, platfo
 function installDependencies(install, dependencies, options) {
     events.emit('verbose', 'Dependencies detected, iterating through them...');
 
-    var top_plugins = path.join(options.plugin_src_dir || install.top_plugin_dir, '..')
+    var top_plugins = path.join(options.plugin_src_dir || install.top_plugin_dir, '..');
 
     // Add directory of top-level plugin to search path
     options.searchpath = options.searchpath || [];
@@ -329,22 +346,13 @@ function installDependencies(install, dependencies, options) {
     // b) Scan the top level plugin directory {$top_plugins} for matching id (searchpath)
     // c) Fetch from registry
 
-    return dependencies.reduce(function(soFar, depXml) {
+    return dependencies.reduce(function(soFar, dep) {
         return soFar.then(
             function() {
-                var dep = {
-                    id: depXml.attrib.id,
-                    subdir: depXml.attrib.subdir || '',
-                    url: depXml.attrib.url || '',
-                    git_ref: depXml.attrib.commit
-                }
+                dep.git_ref = dep.commit;
 
-                if (dep.subdir.length) {
+                if (dep.subdir) {
                     dep.subdir = path.normalize(dep.subdir);
-                }
-
-                if (!dep.id) {
-                    throw new CordovaError('<dependency> tag is missing id attribute: ' + elementtree.tostring(depXml, {xml_declaration:false}));
                 }
 
                 // We build the dependency graph only to be able to detect cycles, getChain will throw an error if it detects one
@@ -405,7 +413,7 @@ function tryFetchDependency(dep, install, options) {
             return d.promise.then(function(git_repo) {
                 //Clear out the subdir since the url now contains it
                 var url = path.join(git_repo, dep.subdir);
-                dep.subdir = "";
+                dep.subdir = '';
                 return Q(url);
             }).fail(function(error){
 //console.log("Failed to resolve url='.': " + error);
@@ -449,7 +457,7 @@ function tryFetchDependency(dep, install, options) {
         relativePath = path.resolve(install.top_plugin_dir, '../' + dep.url);
 
         if( fs.existsSync(relativePath) ) {
-           dep.url = relativePath;
+            dep.url = relativePath;
         }
     }
 
@@ -474,7 +482,7 @@ function installDependency(dep, install, options) {
             is_top_level: false
         });
 
-       return runInstall(install.actions, install.platform, install.project_dir, dep.install_dir, install.plugins_dir, opts);
+        return runInstall(install.actions, install.platform, install.project_dir, dep.install_dir, install.plugins_dir, opts);
 
     } else {
         events.emit('verbose', 'Dependent plugin "' + dep.id + '" not fetched, retrieving then installing.');
@@ -498,60 +506,61 @@ function installDependency(dep, install, options) {
     }
 }
 
-function handleInstall(actions, plugin_id, plugin_et, platform, project_dir, plugins_dir, plugin_dir, filtered_variables, www_dir, is_top_level) {
+function handleInstall(actions, pluginInfo, platform, project_dir, plugins_dir, plugin_dir, filtered_variables, options) {
 
     // @tests - important this event is checked spec/install.spec.js
-    events.emit('verbose', 'Install start for "' + plugin_id + '" on ' + platform + '.');
+    events.emit('verbose', 'Install start for "' + pluginInfo.id + '" on ' + platform + '.');
 
     var handler = platform_modules[platform];
-    www_dir = www_dir || handler.www_dir(project_dir);
 
-    var platformTag = plugin_et.find('./platform[@name="'+platform+'"]');
-    var assets = plugin_et.findall('asset');
-    if (platformTag) {
-
-        assets = assets.concat(platformTag.findall('./asset'));
+    var platformTag = pluginInfo._et.find('./platform[@name="'+platform+'"]');
+    // CB-6976 Windows Universal Apps. For smooth transition and to prevent mass api failures
+    // we allow using windows8 tag for new windows platform
+    if (platform == 'windows' && !platformTag) {
+        platformTag = pluginInfo._et.find('platform[@name="' + 'windows8' + '"]');
+    }
+    if ( pluginInfo.hasPlatformSection(platform) ) {
         var sourceFiles = platformTag.findall('./source-file'),
             headerFiles = platformTag.findall('./header-file'),
             resourceFiles = platformTag.findall('./resource-file'),
-            frameworkFiles = platformTag.findall('./framework[@custom="true"]'), // CB-5238 adding only custom frameworks
+            frameworkFiles = platformTag.findall('./framework'),
             libFiles = platformTag.findall('./lib-file');
 
 
         // queue up native stuff
         sourceFiles && sourceFiles.forEach(function(item) {
-            actions.push(actions.createAction(handler["source-file"].install,
-                                              [item, plugin_dir, project_dir, plugin_id],
-                                              handler["source-file"].uninstall,
-                                              [item, project_dir, plugin_id]));
+            actions.push(actions.createAction(handler['source-file'].install,
+                                              [item, plugin_dir, project_dir, pluginInfo.id],
+                                              handler['source-file'].uninstall,
+                                              [item, project_dir, pluginInfo.id]));
         });
 
         headerFiles && headerFiles.forEach(function(item) {
-            actions.push(actions.createAction(handler["header-file"].install,
-                                             [item, plugin_dir, project_dir, plugin_id],
-                                             handler["header-file"].uninstall,
-                                             [item, project_dir, plugin_id]));
+            actions.push(actions.createAction(handler['header-file'].install,
+                                             [item, plugin_dir, project_dir, pluginInfo.id],
+                                             handler['header-file'].uninstall,
+                                             [item, project_dir, pluginInfo.id]));
         });
 
         resourceFiles && resourceFiles.forEach(function(item) {
-            actions.push(actions.createAction(handler["resource-file"].install,
-                                              [item, plugin_dir, project_dir, plugin_id],
-                                              handler["resource-file"].uninstall,
-                                              [item, project_dir, plugin_id]));
+            actions.push(actions.createAction(handler['resource-file'].install,
+                                              [item, plugin_dir, project_dir, pluginInfo.id],
+                                              handler['resource-file'].uninstall,
+                                              [item, project_dir, pluginInfo.id]));
         });
         // CB-5238 custom frameworks only
         frameworkFiles && frameworkFiles.forEach(function(item) {
-            actions.push(actions.createAction(handler["framework"].install,
-                                             [item, plugin_dir, project_dir, plugin_id],
-                                             handler["framework"].uninstall,
-                                             [item, project_dir, plugin_id]));
+            actions.push(actions.createAction(handler['framework'].install,
+                                             [item, plugin_dir, project_dir, pluginInfo.id],
+                                             handler['framework'].uninstall,
+                                             [item, project_dir, pluginInfo.id]));
         });
 
         libFiles && libFiles.forEach(function(item) {
-            actions.push(actions.createAction(handler["lib-file"].install,
-                                                [item, plugin_dir, project_dir, plugin_id],
-                                                handler["lib-file"].uninstall,
-                                                [item, project_dir, plugin_id]));
+            actions.push(actions.createAction(handler['lib-file'].install,
+                                                [item, plugin_dir, project_dir, pluginInfo.id],
+                                                handler['lib-file'].uninstall,
+                                                [item, project_dir, pluginInfo.id]));
 
         });
     }
@@ -560,27 +569,23 @@ function handleInstall(actions, plugin_id, plugin_et, platform, project_dir, plu
     return actions.process(platform, project_dir)
     .then(function(err) {
         // queue up the plugin so prepare knows what to do.
-        config_changes.add_installed_plugin_to_prepare_queue(plugins_dir, plugin_id, platform, filtered_variables, is_top_level);
+        config_changes.add_installed_plugin_to_prepare_queue(plugins_dir, pluginInfo.id, platform, filtered_variables, options.is_top_level);
         // call prepare after a successful install
-        plugman.prepare(project_dir, platform, plugins_dir, www_dir);
+        plugman.prepare(project_dir, platform, plugins_dir, options.www_dir, options.is_top_level);
 
-        events.emit('verbose', 'Install complete for ' + plugin_id + ' on ' + platform + '.');
+        events.emit('verbose', 'Install complete for ' + pluginInfo.id + ' on ' + platform + '.');
         // WIN!
         // Log out plugin INFO element contents in case additional install steps are necessary
-        var info = plugin_et.findall('./info');
-        if(info.length) {
-            events.emit('results', interp_vars(filtered_variables, info[0].text));
-        }
-        info = (platformTag ? platformTag.findall('./info') : []);
-        if(info.length) {
-            events.emit('results', interp_vars(filtered_variables, info[0].text));
-        }
+        var info_strings = pluginInfo.getInfo(platform) || [];
+        info_strings.forEach( function(info) {
+            events.emit('results', interp_vars(filtered_variables, info));
+        });
     });
 }
 
 function interp_vars(vars, text) {
     vars && Object.keys(vars).forEach(function(key) {
-        var regExp = new RegExp("\\$" + key, "g");
+        var regExp = new RegExp('\\$' + key, 'g');
         text = text.replace(regExp, vars[key]);
     });
     return text;

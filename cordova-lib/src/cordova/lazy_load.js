@@ -16,12 +16,21 @@
     specific language governing permissions and limitations
     under the License.
 */
+
+/* jshint node:true, bitwise:true, undef:true, trailing:true, quotmark:true,
+          indent:4, unused:vars, latedef:nofunc
+*/
+
+// The URL:true below prevents jshint error "Redefinition or 'URL'."
+/* globals URL:true */
+
 var path          = require('path'),
+    _             = require('underscore'),
     fs            = require('fs'),
     shell         = require('shelljs'),
     platforms     = require('./platforms'),
     npmconf       = require('npmconf'),
-    events        = require('./events'),
+    events        = require('../events'),
     request       = require('request'),
     config        = require('./config'),
     hooker        = require('./hooker'),
@@ -29,123 +38,224 @@ var path          = require('path'),
     tar           = require('tar'),
     URL           = require('url'),
     Q             = require('q'),
-    util          = require('./util');
+    npm           = require('npm'),
+    util          = require('./util'),
+    stubplatform  = {
+        url    : undefined,
+        version: undefined,
+        altplatform: undefined,
+        subdirectory: ''
+    };
 
-module.exports = {
-    // Returns a promise for the path to the lazy-loaded directory.
-    cordova:function lazy_load(platform) {
-        if (!(platform in platforms)) {
-            return Q.reject(new Error('Cordova library "' + platform + '" not recognized.'));
+exports.cordova = cordova;
+exports.cordova_git = cordova_git;
+exports.cordova_npm = cordova_npm;
+exports.npm_cache_add = npm_cache_add;
+exports.custom = custom;
+exports.based_on_config = based_on_config;
+
+// Returns a promise for the path to the lazy-loaded directory.
+function based_on_config(project_root, platform, opts) {
+    var custom_path = config.has_custom_path(project_root, platform);
+    if (custom_path === false && platform === 'windows') {
+        custom_path = config.has_custom_path(project_root, 'windows8');
+    }
+    if (custom_path) {
+        var dot_file = config.read(project_root),
+            mixed_platforms = _.extend({}, platforms);
+        mixed_platforms[platform] = _.extend({}, mixed_platforms[platform], dot_file.lib && dot_file.lib[platform] || {});
+        return module.exports.custom(mixed_platforms, platform);
+    } else {
+        return module.exports.cordova(platform, opts);
+    }
+}
+
+// Returns a promise for the path to the lazy-loaded directory.
+function cordova(platform, opts) {
+    var use_git = opts && opts.usegit || platform === 'www';
+    if ( use_git ) {
+        return module.exports.cordova_git(platform);
+    } else {
+        return module.exports.cordova_npm(platform);
+    }
+}
+
+function cordova_git(platform) {
+    var mixed_platforms = _.extend({}, platforms),
+        plat;
+    if (!(platform in platforms)) {
+        return Q.reject(new Error('Cordova library "' + platform + '" not recognized.'));
+    }
+    plat = mixed_platforms[platform];
+    if (/^...*:/.test(plat.url)) {
+        plat.url = plat.url + ';a=snapshot;h=' + plat.version + ';sf=tgz';
+    }
+    plat.id = 'cordova';
+    return module.exports.custom(mixed_platforms, platform);
+}
+
+function cordova_npm(platform) {
+    var version;
+    // Check if platform looks like platform@version
+    if (platform.indexOf('@') != -1) {
+        var parts = platform.split('@');
+        platform = parts[0];
+        version = parts[1];
+    }
+    if ( !(platform in platforms) ) {
+        return Q.reject(new Error('Cordova library "' + platform + '" not recognized.'));
+    }
+    // In most cases platform does not specify a version and we use
+    // the hard-coded default version from platforms.js
+    version = version || platforms[platform].version;
+
+    // Check if this version was already downloaded from git, if yes, use that copy.
+    // TODO: remove this once we fully switch to npm workflow.
+    var platdir = platforms[platform].altplatform || platform;
+    var git_dload_dir = path.join(util.libDirectory, platdir, 'cordova', version);
+    if (fs.existsSync(git_dload_dir)) {
+        var subdir = platforms[platform].subdirectory;
+        if (subdir) {
+            git_dload_dir = path.join(git_dload_dir, subdir);
         }
+        events.emit('verbose', 'Platform files for "' + platform + '" previously downloaded not from npm. Using that copy.');
+        return Q(git_dload_dir);
+    }
 
-        var url = platforms[platform].url + ';a=snapshot;h=' + platforms[platform].version + ';sf=tgz';
-        return module.exports.custom(url, 'cordova', platform, platforms[platform].version);
-    },
-    // Returns a promise for the path to the lazy-loaded directory.
-    custom:function(url, id, platform, version) {
-        var download_dir;
-        var tmp_dir;
-        var lib_dir;
+    var pkg = 'cordova-' + platform + '@' + version;
+    return exports.npm_cache_add(pkg);
+}
 
-        // Return early for already-cached remote URL, or for local URLs.
-        var uri = URL.parse(url);
-        var isUri = uri.protocol && uri.protocol[1] != ':'; // second part of conditional is for awesome windows support. fuuu windows
-        if (isUri) {
-            download_dir = (platform == 'wp7' || platform == 'wp8' ? path.join(util.libDirectory, 'wp', id, version) :
-                                                                     path.join(util.libDirectory, platform, id, version));
-            lib_dir = platforms[platform] && platforms[platform].subdirectory && platform !== "blackberry10" ? path.join(download_dir, platforms[platform].subdirectory) : download_dir;
-            if (fs.existsSync(download_dir)) {
-                events.emit('verbose', id + ' library for "' + platform + '" already exists. No need to download. Continuing.');
-                return Q(lib_dir);
-            }
-        } else {
-            // Local path.
-            lib_dir = platforms[platform] && platforms[platform].subdirectory ? path.join(url, platforms[platform].subdirectory) : url;
+// Equivalent to a command like
+// npm cache add cordova-android@3.5.0
+// Returns a promise that resolves to directory containing the package.
+function npm_cache_add(pkg) {
+    var npm_cache_dir = path.join(util.libDirectory, 'npm_cache');
+    // 'cache-min' is the time in seconds npm considers the files fresh and
+    // does not ask the registry if it got a fresher version.
+    return Q.nfcall( npm.load, { 'cache-min': 3600*24, cache: npm_cache_dir })
+    .then(function() {
+        return Q.ninvoke(npm.commands, 'cache', ['add', pkg]);
+    }).then(function(info) {
+        var pkgDir = path.resolve(npm.cache, info.name, info.version, 'package');
+        return pkgDir;
+    });
+}
+
+// Returns a promise for the path to the lazy-loaded directory.
+function custom(platforms, platform) {
+    var plat;
+    var id;
+    var uri;
+    var url;
+    var version;
+    var subdir;
+    var platdir;
+    var download_dir;
+    var tmp_dir;
+    var lib_dir;
+    var isUri;
+    if (!(platform in platforms)) {
+        return Q.reject(new Error('Cordova library "' + platform + '" not recognized.'));
+    }
+
+    plat = _.extend({}, stubplatform, platforms[platform]);
+    version = plat.version;
+    // Older tools can still provide uri (as opposed to url) as part of extra
+    // config to create, it should override the default url provided in
+    // platfroms.js
+    url = plat.uri || plat.url;
+    id = plat.id;
+    subdir = plat.subdirectory;
+    platdir = plat.altplatform || platform;
+    // Return early for already-cached remote URL, or for local URLs.
+    uri = URL.parse(url);
+    isUri = uri.protocol && uri.protocol[1] != ':'; // second part of conditional is for awesome windows support. fuuu windows
+    if (isUri) {
+        download_dir = path.join(util.libDirectory, platdir, id, version);
+        lib_dir = path.join(download_dir, subdir);
+        if (fs.existsSync(download_dir)) {
+            events.emit('verbose', id + ' library for "' + platform + '" already exists. No need to download. Continuing.');
             return Q(lib_dir);
         }
-        return hooker.fire('before_library_download', {
-            platform:platform,
-            url:url,
-            id:id,
-            version:version
-        }).then(function() {
-            var uri = URL.parse(url);
-            var d = Q.defer();
-            npmconf.load(function(err, conf) {
-                // Check if NPM proxy settings are set. If so, include them in the request() call.
-                var proxy;
-                if (uri.protocol == 'https:') {
-                    proxy = conf.get('https-proxy');
-                } else if (uri.protocol == 'http:') {
-                    proxy = conf.get('proxy');
-                }
-                var strictSSL = conf.get('strict-ssl');
+    } else {
+        // Local path.
+        lib_dir = path.join(url, subdir);
+        return Q(lib_dir);
+    }
+    return hooker.fire('before_library_download', {
+        platform:platform,
+        url:url,
+        id:id,
+        version:version
+    }).then(function() {
+        var uri = URL.parse(url);
+        var d = Q.defer();
+        npmconf.load(function(err, conf) {
+            // Check if NPM proxy settings are set. If so, include them in the request() call.
+            var proxy;
+            if (uri.protocol == 'https:') {
+                proxy = conf.get('https-proxy');
+            } else if (uri.protocol == 'http:') {
+                proxy = conf.get('proxy');
+            }
+            var strictSSL = conf.get('strict-ssl');
 
-                // Create a tmp dir. Using /tmp is a problem because it's often on a different partition and sehll.mv()
-                // fails in this case with "EXDEV, cross-device link not permitted".
-                tmp_subidr = 'tmp_' + id + '_' + process.pid + '_' + (new Date).valueOf();
-                tmp_dir = path.join(util.libDirectory, 'tmp', tmp_subidr);
-                shell.rm('-rf', tmp_dir);
-                shell.mkdir('-p', tmp_dir);
+            // Create a tmp dir. Using /tmp is a problem because it's often on a different partition and sehll.mv()
+            // fails in this case with "EXDEV, cross-device link not permitted".
+            var tmp_subidr = 'tmp_' + id + '_' + process.pid + '_' + (new Date()).valueOf();
+            tmp_dir = path.join(util.libDirectory, 'tmp', tmp_subidr);
+            shell.rm('-rf', tmp_dir);
+            shell.mkdir('-p', tmp_dir);
 
-                var size = 0;
-                var request_options = {uri:url};
-                if (proxy) {
-                    request_options.proxy = proxy;
-                }
-                if (typeof strictSSL == 'boolean') {
-                    request_options.strictSSL = strictSSL;
-                }
-                events.emit('verbose', 'Requesting ' + JSON.stringify(request_options) + '...');
-                events.emit('log', 'Downloading ' + id + ' library for ' + platform + '...');
-                var req = request.get(request_options, function(err, res, body) {
-                    if (err) {
-                        shell.rm('-rf', tmp_dir);
-                        d.reject(err);
-                    } else if (res.statusCode != 200) {
-                        shell.rm('-rf', tmp_dir);
-                        d.reject(new Error('HTTP error ' + res.statusCode + ' retrieving version ' + version + ' of ' + id + ' for ' + platform));
-                    } else {
-                        size = body.length;
-                    }
-                });
-
-                req.pipe(zlib.createUnzip())
-                .pipe(tar.Extract({path:tmp_dir}))
-                .on('error', function(err) {
+            var size = 0;
+            var request_options = {url:url};
+            if (proxy) {
+                request_options.proxy = proxy;
+            }
+            if (typeof strictSSL == 'boolean') {
+                request_options.strictSSL = strictSSL;
+            }
+            events.emit('verbose', 'Requesting ' + JSON.stringify(request_options) + '...');
+            events.emit('log', 'Downloading ' + id + ' library for ' + platform + '...');
+            var req = request.get(request_options, function(err, res, body) {
+                if (err) {
                     shell.rm('-rf', tmp_dir);
                     d.reject(err);
-                })
-                .on('end', function() {
-                    events.emit('verbose', 'Downloaded, unzipped and extracted ' + size + ' byte response.');
-                    events.emit('log', 'Download complete');
-                    var entries = fs.readdirSync(tmp_dir);
-                    var entry = path.join(tmp_dir, entries[0]);
-                    shell.mkdir('-p', download_dir);
-                    shell.mv('-f', path.join(entry, (platform=='blackberry10'?'blackberry10':''), '*'), download_dir);
+                } else if (res.statusCode != 200) {
                     shell.rm('-rf', tmp_dir);
-                    d.resolve(hooker.fire('after_library_download', {
-                        platform:platform,
-                        url:url,
-                        id:id,
-                        version:version,
-                        path: lib_dir,
-                        size:size,
-                        symlink:false
-                    }));
-                });
+                    d.reject(new Error('HTTP error ' + res.statusCode + ' retrieving version ' + version + ' of ' + id + ' for ' + platform));
+                } else {
+                    size = body.length;
+                }
             });
-            return d.promise.then(function () { return lib_dir; });
+            req.pipe(zlib.createUnzip())
+            .pipe(tar.Extract({path:tmp_dir}))
+            .on('error', function(err) {
+                shell.rm('-rf', tmp_dir);
+                d.reject(err);
+            })
+            .on('end', function() {
+                events.emit('verbose', 'Downloaded, unzipped and extracted ' + size + ' byte response.');
+                events.emit('log', 'Download complete');
+                var entries = fs.readdirSync(tmp_dir);
+                var entry = path.join(tmp_dir, entries[0]);
+                shell.mkdir('-p', download_dir);
+                shell.mv('-f', path.join(entry, '*'), download_dir);
+                shell.rm('-rf', tmp_dir);
+                d.resolve(hooker.fire('after_library_download', {
+                    platform:platform,
+                    url:url,
+                    id:id,
+                    version:version,
+                    path: lib_dir,
+                    size:size,
+                    symlink:false
+                }));
+            });
         });
-    },
-    // Returns a promise for the path to the lazy-loaded directory.
-    based_on_config:function(project_root, platform) {
-        var custom_path = config.has_custom_path(project_root, platform);
-        if (custom_path) {
-            var dot_file = config.read(project_root);
-            return module.exports.custom(dot_file.lib[platform].uri, dot_file.lib[platform].id, platform, dot_file.lib[platform].version);
-        } else {
-            return module.exports.cordova(platform);
-        }
-    }
-};
+        return d.promise.then(function () { return lib_dir; });
+    });
+}
+
+

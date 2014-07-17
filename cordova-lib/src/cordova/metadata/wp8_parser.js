@@ -16,19 +16,22 @@
     specific language governing permissions and limitations
     under the License.
 */
+
+/* jshint node:true, bitwise:true, undef:true, trailing:true, quotmark:true,
+          indent:4, unused:vars, latedef:nofunc, sub:true
+*/
+
 var fs            = require('fs'),
     path          = require('path'),
-    et            = require('elementtree'),
     util          = require('../util'),
-    events        = require('../events'),
+    events        = require('../../events'),
     shell         = require('shelljs'),
-    child_process = require('child_process'),
     Q             = require('q'),
-    ConfigParser  = require('../ConfigParser'),
+    ConfigParser  = require('../../configparser/ConfigParser'),
     CordovaError  = require('../../CordovaError'),
     xml           = require('../../util/xml-helpers'),
-    config        = require('../config'),
-    hooker        = require('../hooker');
+    hooker        = require('../hooker'),
+    csproj = require('../../util/windows/csproj');
 
 module.exports = function wp8_parser(project) {
     try {
@@ -42,28 +45,6 @@ module.exports = function wp8_parser(project) {
         throw new CordovaError('The provided path "' + project + '" is not a Windows Phone 8 project. ' + e);
     }
     this.manifest_path  = path.join(this.wp8_proj_dir, 'Properties', 'WMAppManifest.xml');
-};
-
-// Returns a promise.
-module.exports.check_requirements = function(project_root) {
-    events.emit('log', 'Checking wp8 requirements...');
-    var lib_path = path.join(util.libDirectory, 'wp', 'cordova', require('../platforms').wp8.version, 'wp8');
-    var custom_path = config.has_custom_path(project_root, 'wp8');
-    if (custom_path) {
-        lib_path = path.join(custom_path, 'wp8');
-    }
-    var command = '"' + path.join(lib_path, 'bin', 'check_reqs') + '"';
-    events.emit('verbose', 'Running "' + command + '" (output to follow)');
-    var d = Q.defer();
-    child_process.exec(command, function(err, output, stderr) {
-        events.emit('verbose', output);
-        if (err) {
-            d.reject(new CordovaError('Requirements check failed: ' + output + stderr));
-        } else {
-            d.resolve();
-        }
-    });
-    return d.promise;
 };
 
 module.exports.prototype = {
@@ -83,10 +64,10 @@ module.exports.prototype = {
         var name = config.name();
         var prev_name = manifest.find('.//App[@Title]')['attrib']['Title'];
         if(prev_name != name) {
-            //console.log("Updating app name from " + prev_name + " to " + name);
+            //console.log('Updating app name from ' + prev_name + " to " + name);
             manifest.find('.//App').attrib.Title = name;
-            manifest.find('.//App').attrib.Publisher = name + " Publisher";
-            manifest.find('.//App').attrib.Author = name + " Author";
+            manifest.find('.//App').attrib.Publisher = name + ' Publisher';
+            manifest.find('.//App').attrib.Author = name + ' Author';
             manifest.find('.//PrimaryToken').attrib.TokenID = name;
             //update name of sln and csproj.
             name = name.replace(/(\.\s|\s\.|\s+|\.+)/g, '_'); //make it a ligitamate name
@@ -95,7 +76,7 @@ module.exports.prototype = {
             var sln_name = fs.readdirSync(this.wp8_proj_dir).filter(function(e) { return e.match(/\.sln$/i); })[0];
             var sln_path = path.join(this.wp8_proj_dir, sln_name);
             var sln_file = fs.readFileSync(sln_path, 'utf-8');
-            var name_regex = new RegExp(prev_name, "g");
+            var name_regex = new RegExp(prev_name, 'g');
             fs.writeFileSync(sln_path, sln_file.replace(name_regex, name), 'utf-8');
             shell.mv('-f', this.csproj_path, path.join(this.wp8_proj_dir, name + '.csproj'));
             this.csproj_path = path.join(this.wp8_proj_dir, name + '.csproj');
@@ -110,10 +91,10 @@ module.exports.prototype = {
          *  - App.xaml
          *  - App.xaml.cs
          */
-         var pkg = config.packageName();
-         var csproj = xml.parseElementtreeSync(this.csproj_path);
-         prev_name = csproj.find('.//RootNamespace').text;
-         if(prev_name != pkg) {
+        var pkg = config.packageName();
+        var csproj = xml.parseElementtreeSync(this.csproj_path);
+        prev_name = csproj.find('.//RootNamespace').text;
+        if(prev_name != pkg) {
             //console.log("Updating package name from " + prev_name + " to " + pkg);
             //CordovaAppProj.csproj
             csproj.find('.//RootNamespace').text = pkg;
@@ -136,10 +117,10 @@ module.exports.prototype = {
             //App.xaml.cs
             var appCS = fs.readFileSync(path.join(this.wp8_proj_dir, 'App.xaml.cs'), 'utf-8');
             fs.writeFileSync(path.join(this.wp8_proj_dir, 'App.xaml.cs'), appCS.replace(namespaceRegEx, 'namespace ' + pkg), 'utf-8');
-         }
+        }
 
-         //Write out manifest
-         fs.writeFileSync(this.manifest_path, manifest.write({indent: 4}), 'utf-8');
+        //Write out manifest
+        fs.writeFileSync(this.manifest_path, manifest.write({indent: 4}), 'utf-8');
 
         // Update icons
         var icons = config.getIcons('wp8');
@@ -149,12 +130,12 @@ module.exports.prototype = {
         // icons, that should be added to platform
         // @param dest {string} Path to copy icon to, relative to platform root
         var platformIcons = [
-            {dest: "ApplicationIcon.png", width: 99, height: 99},
-            {dest: "Background.png", width: 159, height: 159},
+            {dest: 'ApplicationIcon.png', width: 99, height: 99},
+            {dest: 'Background.png', width: 159, height: 159},
         ];
 
         platformIcons.forEach(function (item) {
-            icon = icons.getIconBySize(item.width, item.height) || icons.getDefault();
+            var icon = icons.getBySize(item.width, item.height) || icons.getDefault();
             if (icon){
                 var src = path.join(appRoot, icon.src),
                     dest = path.join(platformRoot, item.dest);
@@ -163,6 +144,16 @@ module.exports.prototype = {
             }
         });
 
+        // Update splashscreen
+        // Image size for Windows phone devices should be 768 × 1280 px
+        // See http://msdn.microsoft.com/en-us/library/windowsphone/develop/ff769511.aspx for reference
+        var splash = config.getSplashScreens('wp8').getBySize(768, 1280);
+        if (splash){
+            var src = path.join(appRoot, splash.src),
+                dest = path.join(platformRoot, 'SplashScreenImage.jpg');
+            events.emit('verbose', 'Copying icon from ' + src + ' to ' + dest);
+            shell.cp('-f', src, dest);
+        }
     },
     // Returns the platform-specific www directory.
     www_dir:function() {
@@ -208,37 +199,16 @@ module.exports.prototype = {
 
     // updates the csproj file to explicitly list all www content.
     update_csproj:function() {
-        var csproj_xml = xml.parseElementtreeSync(this.csproj_path);
+        var projFile = new csproj(this.csproj_path);
+
         // remove any previous references to the www files
-        var item_groups = csproj_xml.findall('ItemGroup');
-        for (var i = 0, l = item_groups.length; i < l; i++) {
-            var group = item_groups[i];
-            var files = group.findall('Content');
-            for (var j = 0, k = files.length; j < k; j++) {
-                var file = files[j];
-                if (file.attrib.Include.substr(0, 3) == 'www') {
-                    // remove file reference
-                    group.remove(0, file);
-                    // remove ItemGroup if empty
-                    var new_group = group.findall('Content');
-                    if(new_group.length < 1) {
-                        csproj_xml.getroot().remove(0, group);
-                    }
-                }
-            }
-        }
+        projFile.removeSourceFile(new RegExp('www\\\\*', 'i'));
 
         // now add all www references back in from the root www folder
         var www_files = this.folder_contents('www', this.www_dir());
-        for(file in www_files) {
-            var item = new et.Element('ItemGroup');
-            var content = new et.Element('Content');
-            content.attrib.Include = www_files[file];
-            item.append(content);
-            csproj_xml.getroot().append(item);
-        }
+        projFile.addSourceFile(www_files);
         // save file
-        fs.writeFileSync(this.csproj_path, csproj_xml.write({indent:4}), 'utf-8');
+        projFile.write();
     },
     // Returns an array of all the files in the given directory with relative paths
     // - name     : the name of the top level directory (i.e all files will start with this in their path)
@@ -246,13 +216,13 @@ module.exports.prototype = {
     folder_contents:function(name, dir) {
         var results = [];
         var folder_dir = fs.readdirSync(dir);
-        for(item in folder_dir) {
+        for(var item in folder_dir) {
             var stat = fs.statSync(path.join(dir, folder_dir[item]));
 
             if(stat.isDirectory()) {
                 var sub_dir = this.folder_contents(path.join(name, folder_dir[item]), path.join(dir, folder_dir[item]));
                 //Add all subfolder item paths
-                for(sub_item in sub_dir) {
+                for(var sub_item in sub_dir) {
                     results.push(sub_dir[sub_item]);
                 }
             }

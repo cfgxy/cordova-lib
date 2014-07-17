@@ -1,4 +1,23 @@
+/**
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements.  See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership.  The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied.  See the License for the
+    specific language governing permissions and limitations
+    under the License.
+*/
 var android = require('../../src/plugman/platforms/android'),
+    android_project = require('../../src/plugman/util/android-project'),
     common  = require('../../src/plugman/platforms/common'),
     install = require('../../src/plugman/install'),
     path    = require('path'),
@@ -6,6 +25,7 @@ var android = require('../../src/plugman/platforms/android'),
     shell   = require('shelljs'),
     et      = require('elementtree'),
     os      = require('osenv'),
+    _       = require('underscore'),
     temp    = path.join(os.tmpdir(), 'plugman'),
     plugins_dir = path.join(temp, 'cordova', 'plugins'),
     xml_helpers = require('../../src/util/xml-helpers'),
@@ -113,6 +133,78 @@ describe('android project handler', function() {
                 }).toThrow('"' + target + '" already exists!');
             });
         });
+        describe('of <framework> elements', function() {
+            afterEach(function() {
+                android.purgeProjectFileCache(temp);
+            });
+            it('with custom=true should update the main and library projects', function() {
+                var frameworkElement = { attrib: { src: "LibraryPath", custom: true } };
+                var subDir = path.resolve(temp, dummy_id, frameworkElement.attrib.src);
+                var mainProjectPropsFile = path.resolve(temp, "project.properties");
+                var subProjectPropsFile = path.resolve(subDir, "project.properties");
+
+                var existsSync = spyOn( fs, 'existsSync').andReturn(true);
+                var writeFileSync = spyOn(fs, 'writeFileSync');
+                var copyNewFile = spyOn(common, 'copyNewFile');
+                var readFileSync = spyOn(fs, 'readFileSync').andCallFake(function (file) {
+                    file = path.normalize(file);
+                    if (file === mainProjectPropsFile) {
+                        return '#Some comment\ntarget=android-19\nandroid.library.reference.1=ExistingLibRef1\nandroid.library.reference.2=ExistingLibRef2';
+                    } else if (file === subProjectPropsFile) {
+                        return '#Some comment\ntarget=android-17\nandroid.library=true';
+                    } else {
+                        throw new Error("Trying to read from an unexpected file " + file + '\n expected: ' + mainProjectPropsFile + '\n' + subProjectPropsFile);
+                    }
+                })
+                var exec = spyOn(shell, 'exec');
+
+                android['framework'].install(frameworkElement, dummyplugin, temp, dummy_id);
+                android.parseProjectFile(temp).write();
+
+                expect(_.any(writeFileSync.argsForCall, function (callArgs) {
+                    return callArgs[0] === mainProjectPropsFile && callArgs[1].indexOf('\nandroid.library.reference.3='+dummy_id+'/LibraryPath') > -1;
+                })).toBe(true, 'Reference to library not added');
+                expect(_.any(writeFileSync.argsForCall, function (callArgs) {
+                    return callArgs[0] === subProjectPropsFile && callArgs[1].indexOf('\ntarget=android-19') > -1;
+                })).toBe(true, 'target SDK version not copied to library');
+                expect(exec).toHaveBeenCalledWith('android update lib-project --path "' + subDir + '"');
+            });
+            it('with custom=false should update the main and library projects', function() {
+                var frameworkElement = { attrib: { src: "extras/android/support/v7/appcompat" } };
+                var subDir = path.resolve("~/android-sdk", frameworkElement.attrib.src);
+                var localPropsFile = path.resolve(temp, "local.properties");
+                var mainProjectPropsFile = path.resolve(temp, "project.properties");
+                var subProjectPropsFile = path.resolve(subDir, "project.properties");
+
+                var existsSync = spyOn( fs, 'existsSync').andReturn(true);
+                var writeFileSync = spyOn(fs, 'writeFileSync');
+                var copyNewFile = spyOn(common, 'copyNewFile');
+                var readFileSync = spyOn(fs, 'readFileSync').andCallFake(function (file) {
+                    if (path.normalize(file) === mainProjectPropsFile) {
+                        return '#Some comment\ntarget=android-19\nandroid.library.reference.1=ExistingLibRef1\nandroid.library.reference.2=ExistingLibRef2';
+                    } else if (path.normalize(file) === subProjectPropsFile) {
+                        return '#Some comment\ntarget=android-17\nandroid.library=true';
+                    } else if (path.normalize(file) === localPropsFile) {
+                        return "sdk.dir=~/android-sdk";
+                    } else {
+                        throw new Error("Trying to read from an unexpected file " + file);
+                    }
+                })
+                var exec = spyOn(shell, 'exec');
+
+                android['framework'].install(frameworkElement, dummyplugin, temp, dummy_id);
+                android.parseProjectFile(temp).write();
+
+                var relativePath = android_project.getRelativeLibraryPath(temp, subDir);
+                expect(_.any(writeFileSync.argsForCall, function (callArgs) {
+                    return callArgs[0] === mainProjectPropsFile && callArgs[1].indexOf('\nandroid.library.reference.3=' + relativePath) > -1;
+                })).toBe(true, 'Reference to library not added');
+                expect(_.any(writeFileSync.argsForCall, function (callArgs) {
+                    return callArgs[0] === subProjectPropsFile && callArgs[1].indexOf('\ntarget=android-19') > -1;
+                })).toBe(true, 'target SDK version not copied to library');
+                expect(exec).toHaveBeenCalledWith('android update lib-project --path "' + subDir + '"');
+            });
+        });
     });
 
     describe('uninstallation', function() {
@@ -150,6 +242,31 @@ describe('android project handler', function() {
                     expect(s).toHaveBeenCalledWith(temp, path.join('src', 'com', 'phonegap', 'plugins', 'dummyplugin', 'DummyPlugin.java'));
                     done();
                 });
+            });
+        });
+        describe('of <framework> elements', function() {
+            afterEach(function () {
+                android.purgeProjectFileCache(temp);
+            });
+            it('should remove library reference from the main project', function () {
+                var frameworkElement = { attrib: { src: "LibraryPath", custom: true } };
+                var sub_dir = path.resolve(temp, dummy_id, frameworkElement.attrib.src);
+                var mainProjectProps = path.resolve(temp, "project.properties");
+                var existsSync = spyOn(fs, 'existsSync').andReturn(true);
+                var writeFileSync = spyOn(fs, 'writeFileSync');
+                var removeFile = spyOn(common, 'removeFile');
+                var readFileSync = spyOn(fs, 'readFileSync').andCallFake(function (file) {
+                    if (path.normalize(file) === mainProjectProps)
+                        return '#Some comment\ntarget=android-19\nandroid.library.reference.1=ExistingLibRef1\nandroid.library.reference.2='+dummy_id+'/LibraryPath\nandroid.library.reference.3=ExistingLibRef2\n';
+                })
+                var exec = spyOn(shell, 'exec');
+
+                android['framework'].uninstall(frameworkElement, temp, dummy_id);
+                android.parseProjectFile(temp).write();
+
+                expect(_.any(writeFileSync.argsForCall, function (callArgs) {
+                    return callArgs[0] === mainProjectProps && callArgs[1].indexOf('\nandroid.library.reference.2=ExistingLibRef2') > -1;
+                })).toBe(true, 'Reference to library not removed');
             });
         });
     });

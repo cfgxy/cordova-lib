@@ -30,19 +30,21 @@
  * reference counts.
  */
 
-/* jshint node:true, sub:true, unused:true, indent:4  */
+/* jshint node:true, bitwise:true, undef:true, trailing:true, quotmark:true,
+          indent:4, unused:vars, latedef:nofunc,
+          sub:true
+*/
 
 var fs   = require('fs'),
     path = require('path'),
     glob = require('glob'),
     plist = require('plist-with-patches'),
     bplist = require('bplist-parser'),
-    xcode = require('xcode'),
     et   = require('elementtree'),
     _ = require('underscore'),
     xml_helpers = require('../../util/xml-helpers'),
     platforms = require('./../platforms'),
-    events = require('./../events'),
+    events = require('../../events'),
     plist_helpers = require('./../util/plist-helpers');
 
 
@@ -81,7 +83,7 @@ exports.process = function(plugins_dir, project_dir, platform) {
 
 exports.get_munge_change = function(munge, keys) {
     return deep_find.apply(null, arguments);
-}
+};
 
 /******************************************************************************/
 
@@ -190,6 +192,16 @@ function remove_plugin_changes(plugin_name, plugin_id, is_top_level) {
             );
             continue;
         }
+        // CB-6976 Windows Universal Apps. Compatibility fix for existing plugins.
+        if (self.platform == 'windows' && file == 'package.appxmanifest' &&
+            !fs.existsSync(path.join(self.project_dir, 'package.appxmanifest'))) {
+            // New windows template separate manifest files for Windows8, Windows8.1 and WP8.1
+            var substs = ['package.phone.appxmanifest', 'package.store.appxmanifest', 'package.store80.appxmanifest'];
+            for (var subst in substs) {
+                events.emit('verbose', 'Applying munge to ' + substs[subst]);
+                self.apply_file_munge(substs[subst], munge.files[file], true);
+            }
+        }
         self.apply_file_munge(file, munge.files[file], /* remove = */ true);
     }
 
@@ -239,6 +251,15 @@ function add_plugin_changes(plugin_id, plugin_vars, is_top_level, should_increme
                 'which are no longer supported. Support has been removed as of Cordova 3.4.'
             );
             continue;
+        }
+        // CB-6976 Windows Universal Apps. Compatibility fix for existing plugins.
+        if (self.platform == 'windows' && file == 'package.appxmanifest' &&
+            !fs.existsSync(path.join(self.project_dir, 'package.appxmanifest'))) {
+            var substs = ['package.phone.appxmanifest', 'package.store.appxmanifest', 'package.store80.appxmanifest'];
+            for (var subst in substs) {
+                events.emit('verbose', 'Applying munge to ' + substs[subst]);
+                self.apply_file_munge(substs[subst], munge.files[file]);
+            }
         }
         self.apply_file_munge(file, munge.files[file]);
     }
@@ -297,6 +318,12 @@ function generate_plugin_config_munge(plugin_dir, vars) {
     var plugin_xml = plugin_config.data;
 
     var platformTag = plugin_xml.find('platform[@name="' + self.platform + '"]');
+    // CB-6976 Windows Universal Apps. For smooth transition and to prevent mass api failures
+    // we allow using windows8 tag for new windows platform
+    if (self.platform == 'windows' && !platformTag) {
+        platformTag = plugin_xml.find('platform[@name="' + 'windows8' + '"]');
+    }
+
     var changes = [];
     // add platform-agnostic config changes
     changes = changes.concat(plugin_xml.findall('config-file'));
@@ -306,16 +333,18 @@ function generate_plugin_config_munge(plugin_dir, vars) {
 
         // note down pbxproj framework munges in special section of munge obj
         // CB-5238 this is only for systems frameworks
-        var frameworks = platformTag.findall('framework');
-        frameworks.forEach(function(f) {
-            var custom = f.attrib['custom'];
-            if(!custom) {
-                var file = f.attrib['src'];
-                var weak = ('true' == f.attrib['weak']).toString();
+        if (self.platform === 'ios') {
+            var frameworks = platformTag.findall('framework');
+            frameworks.forEach(function (f) {
+                var custom = f.attrib['custom'];
+                if (!custom) {
+                    var file = f.attrib['src'];
+                    var weak = ('true' == f.attrib['weak']).toString();
 
-                deep_add(munge, 'framework', file, { xml: weak, count: 1 });
-            }
-        });
+                    deep_add(munge, 'framework', file, { xml: weak, count: 1 });
+                }
+            });
+        }
     }
 
     changes.forEach(function(change) {
@@ -329,7 +358,7 @@ function generate_plugin_config_munge(plugin_dir, vars) {
             // interp vars
             if (vars) {
                 Object.keys(vars).forEach(function(key) {
-                    var regExp = new RegExp("\\$" + key, "g");
+                    var regExp = new RegExp('\\$' + key, 'g');
                     stringified = stringified.replace(regExp, vars[key]);
                 });
             }
@@ -510,8 +539,7 @@ function ConfigFile_load() {
         self.data = xml_helpers.parseElementtreeSync(filepath);
     } else if (ext == '.pbxproj') {
         self.type = 'pbxproj';
-        self.data = xcode.project(filepath);
-        self.data.parseSync();
+        self.data = platforms.ios.parseProjectFile(self.project_dir).xcode;
     } else {
         // plist file
         self.type = 'plist';
@@ -534,8 +562,8 @@ function ConfigFile_save() {
         fs.writeFileSync(self.filepath, self.data.writeSync());
     } else {
         // plist
-        var regExp = new RegExp("<string>[ \t\r\n]+?</string>", "g");
-        fs.writeFileSync(self.filepath, plist.build(self.data).replace(regExp, "<string></string>"));
+        var regExp = new RegExp('<string>[ \t\r\n]+?</string>', 'g');
+        fs.writeFileSync(self.filepath, plist.build(self.data).replace(regExp, '<string></string>'));
     }
     self.is_changed = false;
 }
@@ -715,7 +743,7 @@ function deep_remove(obj, keys /* or key1, key2 .... */ ) {
         return undefined;
     }, keys);
 
-    return typeof result === "undefined" ? true : result;
+    return typeof result === 'undefined' ? true : result;
 }
 
 // search for [key1][key2]...[keyN]
@@ -756,7 +784,7 @@ function process_munge(obj, createParents, func, keys /* or key1, key2 .... */ )
         obj.files[k] = obj.files[k] || { parents: {} };
         return process_munge(obj.files[k], createParents, func, keys.slice(1));
     } else {
-        throw new Error("Invalid key format. Must contain at most 3 elements (file, parent, xmlChild).");
+        throw new Error('Invalid key format. Must contain at most 3 elements (file, parent, xmlChild).');
     }
 }
 

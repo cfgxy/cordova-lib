@@ -1,3 +1,21 @@
+/**
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements.  See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership.  The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied.  See the License for the
+    specific language governing permissions and limitations
+    under the License.
+*/
 
 var helpers = require('./helpers'),
     path = require('path'),
@@ -7,9 +25,10 @@ var helpers = require('./helpers'),
     superspawn = require('../src/cordova/superspawn'),
     config = require('../src/cordova/config'),
     Q = require('q'),
-    events = require('../src/cordova/events'),
+    events = require('../src/events'),
     cordova = require('../src/cordova/cordova');
 
+var supported_platforms = Object.keys(platforms).filter(function(p) { return p != 'www'; });
 var tmpDir = helpers.tmpDir('platform_test');
 var project = path.join(tmpDir, 'project');
 
@@ -34,7 +53,6 @@ describe('platform end-to-end', function() {
             expect(installed[1].indexOf(helpers.testPlatform)).toBe(-1);
         });
     }
-
     function fullPlatformList() {
         return cordova.raw.platform('list').then(function() {
             var installed = results.match(/Installed platforms: (.*)/);
@@ -57,7 +75,7 @@ describe('platform end-to-end', function() {
         // Now we load the config.json in the newly created project and edit the target platform's lib entry
         // to point at the fixture version. This is necessary so that cordova.prepare can find cordova.js there.
         var c = config.read(project);
-        c.lib[helpers.testPlatform].uri = path.join(__dirname, 'fixtures', 'platforms', helpers.testPlatform + '-lib');
+        c.lib[helpers.testPlatform].url = path.join(__dirname, 'fixtures', 'platforms', helpers.testPlatform + '-lib');
         config.write(project, c);
 
         // The config.json in the fixture project points at fake "local" paths.
@@ -83,7 +101,6 @@ describe('platform end-to-end', function() {
         }).then(function() {
             // Check the platform add was successful.
             expect(path.join(project, 'platforms', helpers.testPlatform)).toExist();
-            expect(path.join(project, 'merges', helpers.testPlatform)).toExist();
             expect(path.join(project, 'platforms', helpers.testPlatform, 'cordova')).toExist();
         }).then(fullPlatformList) // Check for it in platform ls.
         .then(function() {

@@ -1,3 +1,27 @@
+/**
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements.  See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership.  The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied.  See the License for the
+    specific language governing permissions and limitations
+    under the License.
+*/
+
+/* jshint node:true, bitwise:true, undef:true, trailing:true, quotmark:true,
+          indent:4, unused:vars, latedef:nofunc,
+          quotmark:false, unused:false
+*/
+
 /*
   Helper for dealing with Windows Store JS app .jsproj files
 */
@@ -7,19 +31,24 @@ var xml_helpers = require('../../util/xml-helpers'),
     et = require('elementtree'),
     fs = require('fs'),
     shell = require('shelljs'),
-    events = require('../events'),
+    events = require('../../events'),
     path = require('path');
 
-var WindowsStoreProjectTypeGUID = "{BC8A1FFA-BEE3-4634-8014-F334798102B3}";  // any of the below, subtype
-var WinCSharpProjectTypeGUID = "{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}";    // .csproj
-var WinVBnetProjectTypeGUID = "{F184B08F-C81C-45F6-A57F-5ABD9991F28F}";     // who the ef cares?
-var WinCplusplusProjectTypeGUID = "{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}"; // .vcxproj
+var WindowsStoreProjectTypeGUID = "{BC8A1FFA-BEE3-4634-8014-F334798102B3}";  //any of the below, subtype
+var WinCSharpProjectTypeGUID = "{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}";  // .csproj
+var WinVBnetProjectTypeGUID = "{F184B08F-C81C-45F6-A57F-5ABD9991F28F}";  // who the ef cares?
+var WinCplusplusProjectTypeGUID = "{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}";  // .vcxproj
 
 
 function jsproj(location) {
+    if (!location) {
+        throw new Error('Project file location can\'t be null or empty' );
+    }
     events.emit('verbose','creating jsproj from project at : ' + location);
     this.location = location;
     this.xml = xml_helpers.parseElementtreeSync(location);
+    // Detect universal Windows app project template
+    this.isUniversalWindowsApp = location.match(/\.(projitems|shproj)$/i);
     return this;
 }
 
@@ -53,6 +82,8 @@ jsproj.prototype = {
 
         events.emit('verbose','addReference::' + relPath);
 
+        relPath = this.isUniversalWindowsApp ? '$(MSBuildThisFileDirectory)' + relPath : relPath;
+
         var item = new et.Element('ItemGroup');
         var extName = path.extname(relPath);
 
@@ -62,13 +93,13 @@ jsproj.prototype = {
 
         // add hint path with full path
         var hint_path = new et.Element('HintPath');
-            hint_path.text = relPath;
+        hint_path.text = relPath;
 
         elem.append(hint_path);
 
         if(extName == ".winmd") {
             var mdFileTag = new et.Element("IsWinMDFile");
-                mdFileTag.text = "true";
+            mdFileTag.text = "true";
             elem.append(mdFileTag);
         }
 
@@ -78,6 +109,8 @@ jsproj.prototype = {
 
     removeReference:function(relPath) {
         events.emit('verbose','removeReference::' + relPath);
+
+        relPath = this.isUniversalWindowsApp ? '$(MSBuildThisFileDirectory)' + relPath : relPath;
 
         var extName = path.extname(relPath);
         var includeText = path.basename(relPath,extName);
@@ -91,44 +124,57 @@ jsproj.prototype = {
     },
 
     addSourceFile:function(relative_path) {
-
-        relative_path = relative_path.split('/').join('\\');
+        // we allow multiple paths to be passed at once as array so that
+        // we don't create separate ItemGroup for each source file, CB-6874
+        if (!(relative_path instanceof Array)) {
+            relative_path = [relative_path];
+        }
         // make ItemGroup to hold file.
         var item = new et.Element('ItemGroup');
 
-        var content = new et.Element('Content');
-            content.attrib.Include = relative_path;
-        item.append(content);
-
+        relative_path.forEach(function(filePath) {
+            filePath = filePath.split('/').join('\\');
+            filePath = this.isUniversalWindowsApp ? '$(MSBuildThisFileDirectory)' + filePath : filePath;
+            
+            var content = new et.Element('Content');
+            content.attrib.Include = filePath;
+            item.append(content);
+        });
         this.xml.getroot().append(item);
     },
 
-    removeSourceFile:function(relative_path) {
-
-        // path.normalize(relative_path);// ??
-        relative_path = relative_path.split('/').join('\\');
-        // var oneStep = this.xml.findall('ItemGroup/Content[@Include="' + relative_path + '""]/..');
-
-        var item_groups = this.xml.findall('ItemGroup');
-        for (var i = 0, l = item_groups.length; i < l; i++) {
-            var group = item_groups[i];
-            var files = group.findall('Content');
-            for (var j = 0, k = files.length; j < k; j++) {
-                var file = files[j];
-                if (file.attrib.Include == relative_path) {
-                    // remove file reference
-                    group.remove(0, file);
-                    // remove ItemGroup if empty
-                    var new_group = group.findall('Content');
-                    if(new_group.length < 1) {
-                        this.xml.getroot().remove(0, group);
-                    }
-                    return true;
-                }
-            }
+    removeSourceFile: function(relative_path) {
+        var isRegexp = relative_path instanceof RegExp;
+        if (!isRegexp) {
+            // path.normalize(relative_path);// ??
+            relative_path = relative_path.split('/').join('\\');
+            relative_path = this.isUniversalWindowsApp ? '$(MSBuildThisFileDirectory)' + relative_path : relative_path;
         }
-        return false;
+
+        var root = this.xml.getroot();
+        // iterate through all ItemGroup/Content elements and remove all items matched
+        this.xml.findall('ItemGroup').forEach(function(group){
+            // matched files in current ItemGroup
+            var filesToRemove = group.findall('Content').filter(function(item) {
+                if (!item.attrib.Include) return false;
+                return isRegexp ? item.attrib.Include.match(relative_path) :
+                    item.attrib.Include == relative_path;
+            });
+
+            // nothing to remove, skip..
+            if (filesToRemove.length < 1) return;
+
+            filesToRemove.forEach(function(file) {
+                // remove file reference
+                group.remove(0, file);
+            });
+            // remove ItemGroup if empty
+            if(group.findall('*').length < 1) {
+                root.remove(0, group);
+            }
+        });
     },
+
     // relative path must include the project file, so we can determine .csproj, .jsproj, .vcxproj...
     addProjectReference:function(relative_path) {
         events.emit('verbose','adding project reference to ' + relative_path);
@@ -179,10 +225,9 @@ jsproj.prototype = {
         // Add the ItemGroup/ProjectReference to the cordova project :
         // <ItemGroup><ProjectReference Include="blahblah.csproj"/></ItemGroup>
         var item = new et.Element('ItemGroup');
-
         var projRef = new et.Element('ProjectReference');
-            projRef.attrib.Include = relative_path;
-            item.append(projRef);
+        projRef.attrib.Include = relative_path;
+        item.append(projRef);
         this.xml.getroot().append(item);
 
     },

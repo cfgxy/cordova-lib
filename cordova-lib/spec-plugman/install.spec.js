@@ -1,8 +1,26 @@
+/**
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements.  See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership.  The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied.  See the License for the
+    specific language governing permissions and limitations
+    under the License.
+*/
 var install = require('../src/plugman/install'),
     actions = require('../src/plugman/util/action-stack'),
     config_changes = require('../src/plugman/util/config-changes'),
     xml_helpers = require('../src/util/xml-helpers'),
-    events  = require('../src/plugman/events'),
+    events  = require('../src/events'),
     plugman = require('../src/plugman/plugman'),
     platforms = require('../src/plugman/platforms/common'),
     common  = require('./common'),
@@ -268,10 +286,10 @@ describe('install', function() {
                 var plugmanVersion = require('../package.json').version;
 
                 expect(spy.calls.length).toBe(4);
-                expect(spy.calls[0].args).toEqual([ '', '>=2.3.0' ]);
+                expect(spy.calls[0].args).toEqual([ null, '>=2.3.0' ]);
                 expect(spy.calls[1].args).toEqual([ plugmanVersion, '>=0.10.0' ]);
-                expect(spy.calls[2].args).toEqual([ '', '>=1.0.0' ]);
-                expect(spy.calls[3].args).toEqual([ '', '>=3.0.0' ]);
+                expect(spy.calls[2].args).toEqual([ null, '>=1.0.0' ]);
+                expect(spy.calls[3].args).toEqual([ null, '>=3.0.0' ]);
             });
         });
         it('should not check custom engine version that is not supported for platform', function() {
@@ -410,7 +428,7 @@ describe('install', function() {
 
     });
 
-    xdescribe('failure', function() {
+    describe('failure', function() {
         it('should throw if platform is unrecognized', function() {
             runs(function() {
                 installPromise( install('atari', project, 'SomePlugin') );
@@ -431,6 +449,7 @@ describe('install', function() {
         });
         it('should throw if git is not found on the path and a remote url is requested', function() {
             spyOn(fs, 'existsSync').andCallFake( fake['existsSync']['noPlugins'] );
+            fetchSpy.andCallThrough();
             var which_spy = spyOn(shell, 'which').andReturn(null);
             runs(function() {
                 installPromise( install('android', project, 'https://git-wip-us.apache.org/repos/asf/cordova-plugin-camera.git') );

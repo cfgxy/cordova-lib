@@ -27,7 +27,7 @@ var platforms = require('../../src/cordova/platforms'),
     Q = require('q'),
     fs = require('fs'),
     config = require('../../src/cordova/config'),
-    ConfigParser = require('../../src/cordova/ConfigParser'),
+    ConfigParser = require('../../src/configparser/ConfigParser'),
     cordova = require('../../src/cordova/cordova');
 
 // Create a real config object before mocking out everything.
@@ -36,7 +36,7 @@ var cfg = new ConfigParser(path.join(__dirname, '..', 'test-config.xml'));
 describe('windows8 project parser', function() {
 
     var proj = '/some/path';
-    var exists, exec, custom, readdir, cfg_parser;
+    var exists, exec, custom, readdir, cfg_parser, config_read;
     var winXml;
     beforeEach(function() {
         exists = spyOn(fs, 'existsSync').andReturn(true);
@@ -45,6 +45,16 @@ describe('windows8 project parser', function() {
             cb(null, '', '');
         });
         custom = spyOn(config, 'has_custom_path').andReturn(false);
+        config_read = spyOn(config, 'read').andCallFake(function() {
+            return custom() ? {
+                lib: {
+                    windows8: {
+                        url: custom()
+                    }
+                }
+            }
+            : ({})
+        });
         readdir = spyOn(fs, 'readdirSync').andReturn(['test.jsproj']);
         winXml = null;
         spyOn(xmlHelpers, 'parseElementtreeSync').andCallFake(function(path) {
@@ -74,36 +84,9 @@ describe('windows8 project parser', function() {
         it('should create an instance with path, manifest properties', function() {
             expect(function() {
                 var parser = new platforms.windows8.parser(proj);
-                expect(parser.windows8_proj_dir).toEqual(proj);
-                expect(parser.manifest_path).toEqual(path.join(proj, 'package.appxmanifest'));
+                expect(parser.projDir).toEqual(proj);
+                expect(parser.manifestPath).toEqual(path.join(proj, 'package.appxmanifest'));
             }).not.toThrow();
-        });
-    });
-
-    describe('check_requirements', function() {
-        it('should fire a callback if there is an error during shelling out', function(done) {
-            exec.andCallFake(function(cmd, opts, cb) {
-                if (!cb) cb = opts;
-                cb(50, 'there was an errorz!', '');
-            });
-            errorWrapper(platforms.windows8.parser.check_requirements(proj), done, function(err) {
-                expect(err).toContain('there was an errorz!');
-            });
-        });
-        it('should check by calling check_reqs on the stock lib path if no custom path is defined', function(done) {
-            wrapper(platforms.windows8.parser.check_requirements(proj), done, function() {
-                expect(exec.mostRecentCall.args[0]).toContain(util.libDirectory);
-                expect(exec.mostRecentCall.args[0]).toMatch(/check_reqs"$/);
-            });
-        });
-        it('should check by calling check_reqs on a custom path if it is so defined', function(done) {
-            var custom_path = path.join('some','custom','path','to','windows8','lib');
-            custom.andReturn(custom_path);
-            wrapper(platforms.windows8.parser.check_requirements(proj),done, function() {
-                expect(exec.mostRecentCall.args[0]).toContain(custom_path);
-                expect(exec.mostRecentCall.args[0]).toMatch(/check_reqs"$/);
-            });
-            done();
         });
     });
 
@@ -165,6 +148,7 @@ describe('windows8 project parser', function() {
                 config = spyOn(parser, 'update_from_config');
                 www = spyOn(parser, 'update_www');
                 www = spyOn(parser, 'update_jsproj');
+                shellls = spyOn(shell, 'ls').andReturn([]);
                 svn = spyOn(util, 'deleteSvnFolders');
                 exists.andReturn(false);
             });

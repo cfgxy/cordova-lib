@@ -17,11 +17,12 @@
     under the License.
 */
 
-var project_dir = path.join(__dirname, 'fixtures', 'base');
-
-var cordova = require('../src/cordova/cordova'),
+var path = require('path'),
+    Q = require('q'),
+    cordova = require('../src/cordova/cordova'),
     cordova_util = require('../src/cordova/util'),
-    ConfigParser = require('../src/cordova/ConfigParser');
+    ConfigParser = require('../src/configparser/ConfigParser'),
+    project_dir = path.join(__dirname, 'fixtures', 'base');
 
 describe('restore command', function(){
   var is_cordova, result, config_add_feature, cd_project;
@@ -36,31 +37,25 @@ describe('restore command', function(){
 
   beforeEach(function(){
     is_cordova = spyOn(cordova_util, 'isCordova').andReturn(project_dir);
-   
+
   });
 
   it('should not run outside of a Cordova-based project by calling util.isCordova', function() {
      is_cordova.andReturn(false);
      wrapper(cordova.raw.restore, function() {
-        expect(result).toEqual(new Error('Current working directory is not a Cordova-based project.'));
+        expect(result.message).toMatch('Current working directory is not a Cordova-based project.');
      });
   });
 
-  it('should not try to restore featrues from config.xml', function(){
- 
- 
-   cd_project_root = spyOn(cordova_util, 'cdProjectRoot').andReturn(project_dir);
- 
-    var call_count =0;
-    ConfigParser.prototype.write = function(){
-      call_count++;
-    }
+  it('should not try to restore features from config.xml', function(){
 
-     expect(call_count).toEqual(0);
-     
-     cordova.restore('plugins');
 
-     expect(call_count).toEqual(0);
+    cd_project_root = spyOn(cordova_util, 'cdProjectRoot').andReturn(project_dir);
+    var parserWriter = spyOn(ConfigParser.prototype, 'write');
+    expect(ConfigParser.prototype.write).not.toHaveBeenCalled();
+    cordova.restore('plugins');
+    expect(ConfigParser.prototype.write).not.toHaveBeenCalled();
+    parserWriter.andCallThrough();
   });
 
 
